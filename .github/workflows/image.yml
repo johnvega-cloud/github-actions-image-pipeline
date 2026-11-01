@@ -1,0 +1,83 @@
+name: image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on every PR and push: build, then fail if Trivy finds HIGH/CRITICAL vulns.
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Trivy scans images in the local Docker, and Docker can only load one
+      # platform, so the scan build is amd64 only.
+      - name: Build (amd64) for the scan
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: hello:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: hello:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # Runs only after the scan passed, and only on a push to a protected branch.
+  publish:
+    needs: scan
+    if: github.event_name == 'push' && github.ref_protected
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token: used to log in to AWS and to sign with Cosign
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to AWS (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build multi-arch and push
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
+          cache-from: type=gha
+
+      - uses: sigstore/cosign-installer@v4
+
+      # Keyless signing: Cosign uses the GitHub OIDC token, so there is no key to store.
+      # Sign the digest, not the tag: a tag can be moved, a digest cannot.
+      - name: Sign with Cosign
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"

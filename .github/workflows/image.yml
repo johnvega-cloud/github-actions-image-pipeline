@@ -72,7 +72,7 @@ jobs:
           tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
 
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
 
       # Keyless signing: Cosign uses the GitHub OIDC token, so there is no key to store.
       # Sign the digest, not the tag: a tag can be moved, a digest cannot.

@@ -1,5 +1,7 @@
 # github-actions-image-pipeline
 
+[![image](https://github.com/johnvega-cloud/github-actions-image-pipeline/actions/workflows/image.yml/badge.svg)](https://github.com/johnvega-cloud/github-actions-image-pipeline/actions/workflows/image.yml)
+
 A GitHub Actions workflow that builds a multi-arch Docker image, scans it with
 Trivy, signs it with Cosign and pushes it to Amazon ECR, but only from a
 protected branch.
